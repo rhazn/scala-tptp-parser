@@ -3,31 +3,50 @@
 package leo
 package modules.input
 
+import leo.datastructures.TPTP.TCFAnnotated
+
 import java.util.NoSuchElementException
 import scala.annotation.tailrec
 import scala.io.Source
 
 /**
  *
- * Parser for the TPTP-based input language, including ...
+ * Parser for TPTP-based input languages for automated theorem proving, including ...
  *   - THF (TH0/TH1): Monomorphic and polymorphic higher-order logic,
  *   - TFF (TF0/TF1): Monomorphic and polymorphic typed first-order logic,
  *   - FOF: Untyped first-order logic,
+ *   - TCF: Typed clause-normal form,
  *   - CNF: (Untyped) clause-normal form, and
  *   - TPI: TPTP Process Instruction language.
  *
- * The parser parses into an abstract syntax tree defined at [[datastructures.TPTP]], resp.
+ * Both annotated as well as "plain" (meant here: not annotated) formulas can be read.
+ * An annotated formula (here, as an example: annotated THF formula) is of form
+ * `thf(name, role, formula, annotations)` whereas the plain formula is the `formula`
+ * part of this instance.
+ *
+ * The parser translated plain formulas into an abstract syntax tree defined at [[datastructures.TPTP]], resp.
  * its corresponding specializations for the respective language dialect:
- *   - THF formulas are parsed into [[datastructures.TPTP.THF]]
- *   - TFF formulas are parsed into [[datastructures.TPTP.TFF]]
- *   - FOF/TPI formulas are parsed into [[datastructures.TPTP.FOF]]
+ *   - THF formulas are parsed into [[datastructures.TPTP.THF]],
+ *   - TFF formulas are parsed into [[datastructures.TPTP.TFF]],
+ *   - FOF/TPI formulas are parsed into [[datastructures.TPTP.FOF]],
+ *   - TCF formulas are parsed into [[datastructures.TPTP.TCF]], and
  *   - CNF formulas are parsed into [[datastructures.TPTP.CNF]].
- * ... each wrapper in the respective [[datastructures.TPTP.AnnotatedFormula]].
+ *
+ * Annotated formulas are additionally wrapped in an [[datastructures.TPTP.AnnotatedFormula]]
+ * object as follows:
+ *   - Annotated THF formulas wrapped as [[datastructures.TPTP.THFAnnotated]],
+ *   - Annotated TFF formulas wrapped as [[datastructures.TPTP.TFFAnnotated]],
+ *   - Annotated FOF formulas wrapped as [[datastructures.TPTP.FOFAnnotated]],
+ *   - Annotated TCF formulas wrapped as [[datastructures.TPTP.TCFAnnotated]],
+ *   - Annotated CNF formulas wrapped as [[datastructures.TPTP.CNFAnnotated]], and
+ *   - Annotated TPI formulas wrapped as [[datastructures.TPTP.TPIAnnotated]].
+ *
+ * Whole TPTP files are represented by [[datastructures.TPTP.Problem]] objects.
+ * Note that `include` directives etc. are parsed as-is and are represented by an [[datastructures.TPTP.Include]] entry
+ * in the [[datastructures.TPTP.Problem]] representation. In particular, they are not parsed recursively.
+ * This has to be implemented externally (e.g., by recursive calls to the parser).
  *
  * Parsing errors will cause [[TPTPParser.TPTPParseException]]s.
- * Note that includes etc. are parsed as-is and reprented by a [[datastructures.TPTP.Include]] entry
- * in the [[datastructures.TPTP.Problem]] representation. In particular, they are not parsed recursively.
- * This has to be implemented externally.
  *
  * @author Alexander Steen
  * @see Original TPTP syntax definition at [[http://tptp.org/TPTP/SyntaxBNF.html]].
@@ -42,9 +61,10 @@ object TPTPParser {
   import datastructures.TPTP.TFF.{Formula => TFFFormula}
   import datastructures.TPTP.FOF.{Formula => FOFFormula}
   import datastructures.TPTP.CNF.{Formula => CNFFormula}
+  import datastructures.TPTP.TCF.{Formula => TCFFormula}
 
   /**
-    * Main exception thrown by the [[TPTPParser]] if some parsing error occurs.
+    * Main exception thrown by the [[leo.modules.input.TPTPParser]] if some parsing error occurs.
     * @param message The message of the parsing error.
     * @param line The line in the source where the parsing error occurred.
     * @param offset the line offset (or column) in the line of the source where the parsing error occurred.
@@ -52,10 +72,10 @@ object TPTPParser {
   class TPTPParseException(message: String, val line: Int, val offset: Int) extends RuntimeException(message)
 
   /**
-    * Parses a whole TPTP file given as [[io.Source]].
+    * Parses a whole TPTP file given as [[scala.io.Source]].
     *
     * @param input The TPTP problem file.
-    * @return The parsing result
+    * @return The parsing result as a [[leo.datastructures.TPTP.Problem]] object.
     * @throws TPTPParseException If an parsing error occurred.
     */
   final def problem(input: Source): Problem = {
@@ -68,16 +88,19 @@ object TPTPParser {
     * Parses a whole TPTP file given as String.
     *
     * @param input The TPTP problem file contents as string.
-    * @return The parsing result
+    * @return The parsing result as a [[leo.datastructures.TPTP.Problem]] object.
     * @throws TPTPParseException If an parsing error occurred.
     */
   @inline final def problem(input: String): Problem = problem(io.Source.fromString(input))
 
   /**
-    * Parses an TPTP annotated formula (THF/TFF/FOF/CNF/TPI) given as String.
+    * Parses an TPTP annotated formula given as String.
+    * Any kind of annotated formula can be passed to the function (THF/TFF/FOF/CNF/TPI),
+    * the parser will produce the respective specialization of [[AnnotatedFormula]],
+    * e.g.,  [[THFAnnotated]] for annotated THF formulas.
     *
     * @param annotatedFormula The annotated formula as string.
-    * @return The parsing result
+    * @return The parsing result as an [[AnnotatedFormula]] object.
     * @throws TPTPParseException If an parsing error occurred.
     */
   final def annotated(annotatedFormula: String): AnnotatedFormula = {
@@ -90,7 +113,7 @@ object TPTPParser {
     * Parses an TPTP THF annotated formula given as String.
     *
     * @param annotatedFormula The annotated formula as string.
-    * @return The parsing result
+    * @return The parsing result as [[THFAnnotated]] object
     * @throws TPTPParseException If an parsing error occurred.
     */
   final def annotatedTHF(annotatedFormula: String): THFAnnotated = {
@@ -103,7 +126,7 @@ object TPTPParser {
     * Parses an TPTP TFF annotated formula given as String.
     *
     * @param annotatedFormula The annotated formula as string.
-    * @return The parsing result
+    * @return The parsing result as [[TFFAnnotated]] object
     * @throws TPTPParseException If an parsing error occurred.
     */
   final def annotatedTFF(annotatedFormula: String): TFFAnnotated = {
@@ -116,7 +139,7 @@ object TPTPParser {
     * Parses an TPTP FOF annotated formula given as String.
     *
     * @param annotatedFormula The annotated formula as string.
-    * @return The parsing result
+    * @return The parsing result as [[FOFAnnotated]] object
     * @throws TPTPParseException If an parsing error occurred.
     */
   final def annotatedFOF(annotatedFormula: String): FOFAnnotated = {
@@ -129,7 +152,7 @@ object TPTPParser {
     * Parses an TPTP CNF annotated formula given as String.
     *
     * @param annotatedFormula The annotated formula as string.
-    * @return The parsing result
+    * @return The parsing result as [[CNFAnnotated]] object
     * @throws TPTPParseException If an parsing error occurred.
     */
   final def annotatedCNF(annotatedFormula: String): CNFAnnotated = {
@@ -139,10 +162,23 @@ object TPTPParser {
     result
   }
   /**
+   * Parses an TPTP TCF annotated formula given as String.
+   *
+   * @param annotatedFormula The annotated formula as string.
+   * @return The parsing result as [[leo.datastructures.TPTP.TCFAnnotated]] object
+   * @throws TPTPParseException If an parsing error occurred.
+   */
+  final def annotatedTCF(annotatedFormula: String): TCFAnnotated = {
+    val parser = parserFromString(annotatedFormula)
+    val result = parser.annotatedTCF()
+    parser.EOF()
+    result
+  }
+  /**
     * Parses an TPTP TPI annotated formula given as String.
     *
     * @param annotatedFormula The annotated formula as string.
-    * @return The parsing result
+    * @return The parsing result as [[TPIAnnotated]] object
     * @throws TPTPParseException If an parsing error occurred.
     */
   final def annotatedTPI(annotatedFormula: String): TPIAnnotated = {
@@ -156,7 +192,7 @@ object TPTPParser {
     * Parses a plain THF formula (i.e., without annotations) given as String.
     *
     * @param formula The annotated formula as string.
-    * @return The parsing result
+    * @return The parsing result as [[THFFormula]] object
     * @throws TPTPParseException If an parsing error occurred.
     */
   final def thf(formula: String): THFFormula = {
@@ -169,7 +205,7 @@ object TPTPParser {
     * Parses a plain TFF formula (i.e., without annotations) given as String.
     *
     * @param formula The annotated formula as string.
-    * @return The parsing result
+    * @return The parsing resultas [[TFFFormula]] object
     * @throws TPTPParseException If an parsing error occurred.
     */
   final def tff(formula: String): TFFFormula = {
@@ -182,7 +218,7 @@ object TPTPParser {
     * Parses a plain FOF formula (i.e., without annotations) given as String.
     *
     * @param formula The annotated formula as string.
-    * @return The parsing result
+    * @return The parsing resultas [[FOFFormula]] object
     * @throws TPTPParseException If an parsing error occurred.
     */
   final def fof(formula: String): FOFFormula = {
@@ -192,10 +228,23 @@ object TPTPParser {
     result
   }
   /**
+   * Parses a plain TCF formula (i.e., without annotations) given as String.
+   *
+   * @param formula The annotated formula as string.
+   * @return The parsing resultas [[TCFFormula]] object
+   * @throws TPTPParseException If an parsing error occurred.
+   */
+  final def tcf(formula: String): TCFFormula = {
+    val parser = parserFromString(formula)
+    val result = parser.tcfLogicFormula()
+    parser.EOF()
+    result
+  }
+  /**
     * Parses a plain CNF formula (i.e., without annotations) given as String.
     *
     * @param formula The annotated formula as string.
-    * @return The parsing result
+    * @return The parsing resultas [[CNFFormula]] object
     * @throws TPTPParseException If an parsing error occurred.
     */
   final def cnf(formula: String): CNFFormula = {
@@ -211,9 +260,7 @@ object TPTPParser {
     private[this] final lazy val iter = input.buffered
     private[this] var curLine: Int = 1
     private[this] var curOffset: Int = 1
-
     private[this] var lookahead: Seq[TPTPLexer.TPTPLexerToken] = Vector.empty
-
 
     @inline private[this] def line(): Unit = { curLine += 1; curOffset = 1 }
     @inline private[this] def step(): Unit = { curOffset += 1 }
@@ -698,10 +745,11 @@ object TPTPParser {
             case "tff" => annotatedTFF()
             case "fof" => annotatedFOF()
             case "cnf" => annotatedCNF()
+            case "tcf" => annotatedTCF()
             case "tpi" => annotatedTPI()
-            case _ => error1(Seq("thf", "tff", "fof", "cnf", "tpi"), t)
+            case _ => error1(Seq("thf", "tff", "fof", "cnf", "tcf", "tpi"), t)
           }
-        case _ => error1(Seq("thf", "tff", "fof", "cnf", "tpi"), t)
+        case _ => error1(Seq("thf", "tff", "fof", "cnf", "tcf", "tpi"), t)
       }
     }
 
@@ -1585,6 +1633,70 @@ object TPTPParser {
           }
           FOF.AtomicTerm(fn, args)
         case _ => error(Seq(INT, RATIONAL, REAL, DOUBLEQUOTED, UPPERWORD, LOWERWORD, SINGLEQUOTED, DOLLARWORD, DOLLARDOLLARWORD), tok)
+      }
+    }
+
+    ////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////
+    // TCF formula stuff
+    ////////////////////////////////////////////////////////////////////////
+    ////////////////////////////////////////////////////////////////////////
+
+    def annotatedTCF(): TCFAnnotated = {
+      m(a(LOWERWORD), "tcf")
+      a(LPAREN)
+      val n = name()
+      a(COMMA)
+      val r = a(LOWERWORD)._2
+      a(COMMA)
+      val f = tcfFormula()
+      var source: GeneralTerm = null
+      var info: Seq[GeneralTerm] = null
+      val an0 = o(COMMA, null)
+      if (an0 != null) {
+        source = generalTerm()
+        val an1 = o(COMMA, null)
+        if (an1 != null) {
+          info = generalList()
+        }
+      }
+      a(RPAREN)
+      a(DOT)
+      if (source == null) TCFAnnotated(n, r, f, None)
+      else TCFAnnotated(n, r, f, Some((source, Option(info))))
+    }
+
+    def tcfFormula(): TCF.Statement = {
+      val idx = peekUnder(LPAREN)
+      val tok = peek(idx)
+      tok._1 match {
+        case SINGLEQUOTED | LOWERWORD | DOLLARDOLLARWORD if peek(idx+1)._1 == COLON => // Typing
+          val tffTyping = tffAtomTyping()
+          TCF.Typing(tffTyping.atom, tffTyping.typ)
+        case _ =>
+          TCF.Logical(tcfLogicFormula())
+      }
+    }
+
+    def tcfLogicFormula(): TCF.Formula = {
+      val tok = peek()
+
+      tok._1 match {
+        case FORALL =>
+          consume()
+          a(LBRACKET)
+          val name = typedTFFVariable()
+          var names: Seq[TFF.TypedVariable] = Vector(name)
+          while (o(COMMA, null) != null) {
+            names = names :+ typedTFFVariable()
+          }
+          a(RBRACKET)
+          a(COLON)
+          val body = cnfLogicFormula()
+          TCF.Formula(names, body)
+        case _ =>
+          val body = cnfLogicFormula()
+          TCF.Formula(Seq.empty, body)
       }
     }
 

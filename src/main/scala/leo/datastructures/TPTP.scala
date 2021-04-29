@@ -3,6 +3,28 @@
 package leo
 package datastructures
 
+/**
+ * Collection of TPTP-related data types that are returned by the [[leo.modules.input.TPTPParser]].
+ * An overview:
+ *   - Whole TPTP problem files are represented by [[leo.datastructures.TPTP.Problem]],
+ *   - Annotated formulas are represented by [[leo.datastructures.TPTP.AnnotatedFormula]]s, more specifically ...
+ *     - Annotated THF formulas by [[leo.datastructures.TPTP.THFAnnotated]],
+ *     - Annotated TFF formulas by [[leo.datastructures.TPTP.TFFAnnotated]],
+ *     - Annotated FOF formulas by [[leo.datastructures.TPTP.FOFAnnotated]],
+ *     - Annotated TCF formulas by [[leo.datastructures.TPTP.TCFAnnotated]],
+ *     - Annotated CNF formulas by [[leo.datastructures.TPTP.CNFAnnotated]], and
+ *     - Annotated TPI formulas by [[leo.datastructures.TPTP.TPIAnnotated]]
+ *   - Include directives are represented by tuples `(filename,optional-list-of-ids)` of type [[leo.datastructures.TPTP.Include]].
+ *
+ * See [[TPTP.THF]], [[TPTP.TFF]], [[TPTP.FOF]], [[TPTP.TCF]], [[TPTP.CNF]] for more information on the
+ * representation of "plain" THF, TFF, FOF, TCF and CNF formulas, respectively.
+ *
+ * All classes have a function called `pretty` that will output the TPTP-compliant representation
+ * of the respective structure. It should hold that `parse(x.pretty) = x` where `parse` is
+ * the hypothetical parsing function for that structure.
+ *
+ * @author Alexander Steen
+ */
 object TPTP {
   type Include = (String, Seq[String])
   type Annotations = Option[(GeneralTerm, Option[Seq[GeneralTerm]])]
@@ -67,11 +89,12 @@ object TPTP {
      *  - [[FormulaType.TFF]]
      *  - [[FormulaType.FOF]]
      *  - [[FormulaType.CNF]]
+     *  - [[FormulaType.TCF]]
      *  - [[FormulaType.TPI]]
      */
     final object FormulaType extends Enumeration {
       type FormulaType = Value
-      final val THF, TFF, FOF, CNF, TPI = Value
+      final val THF, TFF, FOF, CNF, TCF, TPI = Value
     }
   }
   final case class THFAnnotated(override val name: String,
@@ -107,14 +130,16 @@ object TPTP {
     override def symbols: Set[String] = formula.symbols
   }
 
-  /*final case class TCFAnnotated(override val name: String,
+  final case class TCFAnnotated(override val name: String,
                                 override val role: String,
                                 override val formula: TCF.Statement,
                                 override val annotations: Annotations) extends AnnotatedFormula {
     type F = TCF.Statement
 
-    override def pretty: String = prettifyAnnotated("tcf", name, role, formula, annotations)
-  }*/
+    override def formulaType: AnnotatedFormula.FormulaType.FormulaType = AnnotatedFormula.FormulaType.TCF
+    override def pretty: String = prettifyAnnotated("tcf", name, role, formula.pretty, annotations)
+    override def symbols: Set[String] = formula.symbols
+  }
 
   final case class CNFAnnotated(override val name: String,
                                 override val role: String,
@@ -139,7 +164,7 @@ object TPTP {
   }
 
   @inline private[this] final def prettifyAnnotated(prefix: String, name: String, role: String, formula: String, annotations: Annotations): String = {
-    if (annotations.isEmpty) s"$prefix($name, $role, $formula)."
+    if (annotations.isEmpty) s"$prefix(${escapeName(name)}, $role, $formula)."
     else {
       if (annotations.get._2.isEmpty) s"$prefix(${escapeName(name)}, $role, $formula, ${annotations.get._1.pretty})."
       else s"$prefix(${escapeName(name)}, $role, $formula, ${annotations.get._1.pretty}, [${annotations.get._2.get.map(_.pretty).mkString(",")}])."
@@ -158,6 +183,7 @@ object TPTP {
   ////////////////////////////////////////////////////////////////////////
 
   sealed abstract class Number {
+    /** Returns a TPTP-compliant serialization of the number. */
     def pretty: String
   }
   final case class Integer(value: BigInt) extends Number {
@@ -171,6 +197,7 @@ object TPTP {
                                   else s"$wholePart.${decimalPlaces}E$exponent"
   }
 
+  /** Returns a TPTP-compliant serialization of the "general_term" (cf. TPTP syntax BNF). */
   final case class GeneralTerm(data: Seq[GeneralData], list: Option[Seq[GeneralTerm]]) {
     def pretty: String = {
       val sb: StringBuilder = new StringBuilder()
@@ -198,6 +225,7 @@ object TPTP {
     *        [[http://tptp.org/TPTP/SyntaxBNF.html#general_term]] for a use case.
     */
   sealed abstract class GeneralData {
+    /** Returns a TPTP-compliant serialization of the data. */
     def pretty: String
   }
   /** @see [[GeneralData]] */
@@ -228,6 +256,7 @@ object TPTP {
   }
 
   sealed abstract class FormulaData {
+    /** Returns a TPTP-compliant serialization of the formula data. */
     def pretty: String
   }
   final case class THFData(formula: THF.Statement) extends FormulaData {
@@ -266,7 +295,9 @@ object TPTP {
     type Type = Formula
 
     sealed abstract class Statement {
+      /** Returns a set of symbols (except variables) occurring in the formula. */
       def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the formula. */
       def pretty: String
     }
     final case class Typing(atom: String, typ: Type) extends Statement {
@@ -285,7 +316,9 @@ object TPTP {
     // We don't care for well-typedness etc. in parsing. We can parse syntactically correct but completely meaningless
     // and ill-typed inputs. This will be addressed in the interpretation step.
     sealed abstract class Formula {
+      /** Returns a set of symbols (except variables) occurring in the formula. */
       def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the formula. */
       def pretty: String
     }
 
@@ -357,6 +390,7 @@ object TPTP {
     }
 
     sealed abstract class Connective {
+      /** Returns a TPTP-compliant serialization of the connective. */
       def pretty: String
     }
     sealed abstract class UnaryConnective extends Connective
@@ -383,6 +417,7 @@ object TPTP {
     final case object SumTyConstructor extends BinaryConnective { override def pretty: String = "+" }
 
     sealed abstract class Quantifier {
+      /** Returns a TPTP-compliant serialization of the quantifier. */
       def pretty: String
     }
     final case object ! extends Quantifier { override def pretty: String = "!" } // All
@@ -396,6 +431,7 @@ object TPTP {
     /** Special kind of interpreted TPTP constants that do not start with a dollar sign.
      * Used in TH1 for polymorphic constant symbols that correspond to quantification, equality, etc. */
     sealed abstract class DefinedTH1Constant {
+      /** Returns a TPTP-compliant serialization of the TH1 constant. */
       def pretty: String
     }
     final case object !! extends DefinedTH1Constant { override def pretty: String = "!!" } // big pi
@@ -413,7 +449,7 @@ object TPTP {
 
   object TFF {
     type TypedVariable = (String, Option[Type])
-    @inline private final def prettifyTypedVariable(variable: TypedVariable): String = {
+    @inline protected[TPTP] final def prettifyTypedVariable(variable: TypedVariable): String = {
       @inline val name = variable._1
       @inline val typ = variable._2
       typ match {
@@ -423,7 +459,9 @@ object TPTP {
     }
 
     sealed abstract class Statement {
+      /** Returns a set of symbols (except variables) occurring in the formula. */
       def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the formula. */
       def pretty: String
     }
     final case class Typing(atom: String, typ: Type) extends Statement {
@@ -439,7 +477,9 @@ object TPTP {
     }
 
     sealed abstract class Formula {
+      /** Returns a set of symbols (except variables) occurring in the formula. */
       def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the formula. */
       def pretty: String
     }
     final case class AtomicFormula(f: String, args: Seq[Term]) extends Formula  {
@@ -478,7 +518,9 @@ object TPTP {
     // Same for let-statements.
 
     sealed abstract class Term {
+      /** Returns a set of symbols (except variables) occurring in the term. */
       def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the term. */
       def pretty: String
     }
     final case class AtomicTerm(f: String, args: Seq[Term]) extends Term  {
@@ -515,6 +557,7 @@ object TPTP {
     }
 
     sealed abstract class Connective {
+      /** Returns a TPTP-compliant serialization of the connective. */
       def pretty: String
     }
     sealed abstract class UnaryConnective extends Connective
@@ -534,13 +577,16 @@ object TPTP {
     final case object & extends BinaryConnective { override def pretty: String = "&" }
 
     sealed abstract class Quantifier {
+      /** Returns a TPTP-compliant serialization of the quantifier. */
       def pretty: String
     }
     final case object ! extends Quantifier { override def pretty: String = "!" } // All
     final case object ? extends Quantifier { override def pretty: String = "?" } // Exists
 
     sealed abstract class Type {
+      /** Returns a set of symbols (except variables) occurring in the type. */
       def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the type. */
       def pretty: String
     }
     final case class AtomicType(name: String, args: Seq[Type]) extends Type {
@@ -570,23 +616,39 @@ object TPTP {
 
   ////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////
-  // TCF AST: TODO. Let's see if I will implement this at some point.
+  // TCF AST
   ////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////
 
-//  object TCF {
-//    sealed abstract class Statement extends Pretty
-//    final case class Typing(atom: String, typ: Type) extends Statement {
-//      override def pretty: String = {
-//        val escapedName = if (atom.startsWith("$") || atom.startsWith("$$")) atom else escapeAtomicWord(atom)
-//        s"$escapedName: ${typ.pretty}"
-//      }
-//    }
-//    final case class Logical(formula: Formula) extends Statement { override def pretty: String = formula.pretty }
-//
-//    sealed abstract class Formula extends Pretty
-//
-//  }
+  object TCF {
+    type Type = TFF.Type
+
+    sealed abstract class Statement {
+      /** Returns a set of symbols (except variables) occurring in the formula. */
+      def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the formula. */
+      def pretty: String
+    }
+    final case class Typing(atom: String, typ: Type) extends Statement {
+      override def pretty: String = {
+        val escapedName = if (atom.startsWith("$") || atom.startsWith("$$")) atom else escapeAtomicWord(atom)
+        s"$escapedName: ${typ.pretty}"
+      }
+      override def symbols: Set[String] = typ.symbols + atom
+    }
+    final case class Logical(formula: Formula) extends Statement {
+      override def pretty: String = formula.pretty
+      override def symbols: Set[String] = formula.symbols
+    }
+
+    final case class Formula(variables: Seq[TFF.TypedVariable], clause: CNF.Formula) {
+      /** Returns a set of symbols (except variables) occurring in the formula. */
+      def symbols: Set[String] = clause.flatMap(_.symbols).toSet
+      /** Returns a TPTP-compliant serialization of the formula. */
+      def pretty: String = if (variables.isEmpty) clause.map(_.pretty).mkString(" | ")
+      else s"! [${variables.map(TFF.prettifyTypedVariable).mkString(",")}]: ${clause.map(_.pretty).mkString(" | ")}"
+    }
+  }
 
   ////////////////////////////////////////////////////////////////////////
   ////////////////////////////////////////////////////////////////////////
@@ -596,7 +658,9 @@ object TPTP {
 
   object FOF {
     sealed abstract class Statement {
+      /** Returns a set of symbols (except variables) occurring in the formula. */
       def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the formula. */
       def pretty: String
     }
     final case class Logical(formula: Formula) extends Statement {
@@ -605,7 +669,9 @@ object TPTP {
     }
 
     sealed abstract class Formula {
+      /** Returns a set of symbols (except variables) occurring in the formula. */
       def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the formula. */
       def pretty: String
     }
     final case class AtomicFormula(f: String, args: Seq[Term]) extends Formula  {
@@ -643,7 +709,9 @@ object TPTP {
     }
 
     sealed abstract class Term {
+      /** Returns a set of symbols (except variables) occurring in the term. */
       def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the term. */
       def pretty: String
     }
     final case class AtomicTerm(f: String, args: Seq[Term]) extends Term  {
@@ -676,6 +744,7 @@ object TPTP {
     }
 
     sealed abstract class Connective {
+      /** Returns a TPTP-compliant serialization of the connective. */
       def pretty: String
     }
     sealed abstract class UnaryConnective extends Connective
@@ -694,6 +763,7 @@ object TPTP {
     final case object & extends BinaryConnective { override def pretty: String = "&" }
 
     sealed abstract class Quantifier {
+      /** Returns a TPTP-compliant serialization of the quantifier. */
       def pretty: String
     }
     final case object ! extends Quantifier { override def pretty: String = "!" } // All
@@ -708,7 +778,9 @@ object TPTP {
 
   object CNF {
     sealed abstract class Statement {
+      /** Returns a set of symbols (except variables) occurring in the formula. */
       def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the formula. */
       def pretty: String
     }
     final case class Logical(formula: Formula) extends Statement {
@@ -719,7 +791,9 @@ object TPTP {
     type Formula = Seq[Literal]
 
     sealed abstract class Literal {
+      /** Returns a set of symbols (except variables) occurring in the literal. */
       def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the literal. */
       def pretty: String
     }
     final case class PositiveAtomic(formula: AtomicFormula) extends Literal {
@@ -754,7 +828,9 @@ object TPTP {
     }
 
     sealed abstract class Term {
+      /** Returns a set of symbols (except variables) occurring in the term. */
       def symbols: Set[String]
+      /** Returns a TPTP-compliant serialization of the term. */
       def pretty: String
     }
     final case class AtomicTerm(f: String, args: Seq[Term]) extends Term  {
